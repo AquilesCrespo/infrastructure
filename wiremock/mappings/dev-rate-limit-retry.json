@@ -1,0 +1,10 @@
+{
+  "scenarioName": "development-rate-limit",
+  "requiredScenarioState": "retry-allowed",
+  "request": {"method": "GET", "urlPath": "/dev/rate-limit"},
+  "response": {
+    "status": 200,
+    "headers": {"Content-Type": "application/json"},
+    "jsonBody": {"status": "ok", "retried": true}
+  }
+}

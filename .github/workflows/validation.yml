@@ -1,0 +1,56 @@
+name: Infrastructure validation
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 6 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: infrastructure-validation-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: Configuration and regression checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      COMPOSE_ENV_FILES: .env.example
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Validate configuration and syntax
+        run: |
+          docker compose --profile "*" config --quiet
+          bash -n scripts/*.sh tests/*.sh
+          node --check tests/observability.mjs
+          git diff --check
+      - name: Run mocked regression tests
+        run: |
+          bash tests/doctor.sh
+          bash tests/scheduled-backup.sh
+
+  integration:
+    name: Isolated integration tests
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    needs: checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      COMPOSE_ENV_FILES: .env.example
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Verify database recovery and repeatable seeds
+        run: bash tests/db-workflows.sh
+      - name: Verify credentials, readiness, and observability
+        run: node tests/observability.mjs

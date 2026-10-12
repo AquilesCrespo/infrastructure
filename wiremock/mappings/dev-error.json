@@ -1,0 +1,8 @@
+{
+  "request": {"method": "GET", "urlPath": "/dev/error"},
+  "response": {
+    "status": 503,
+    "headers": {"Content-Type": "application/json"},
+    "jsonBody": {"error": "temporarily_unavailable"}
+  }
+}

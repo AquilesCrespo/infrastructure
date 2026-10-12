@@ -5,3 +5,21 @@ scrape_configs:
   - job_name: prometheus
     static_configs:
       - targets: ["localhost:9090"]
+  - job_name: redis
+    dns_sd_configs:
+      - names: ["redis-exporter"]
+        type: A
+        port: 9121
+        refresh_interval: 15s
+  - job_name: postgres
+    dns_sd_configs:
+      - names: ["postgres-exporter"]
+        type: A
+        port: 9187
+        refresh_interval: 15s
+  - job_name: mysql
+    dns_sd_configs:
+      - names: ["mysql"]
+        type: A
+        port: 9104
+        refresh_interval: 15s

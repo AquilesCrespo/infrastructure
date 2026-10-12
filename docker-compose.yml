@@ -7,11 +7,10 @@ x-bounded-logging: &bounded-logging
 services:
   mysql:
     image: mysql:${MYSQL_TAG:-8.4}
-    container_name: local_mysql
     restart: unless-stopped
     logging: *bounded-logging
     ports:
-      - "127.0.0.1:3306:3306"
+      - "127.0.0.1:${MYSQL_PORT:-3306}:3306"
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD in .env}
       MYSQL_DATABASE: ${MYSQL_DATABASE:?Set MYSQL_DATABASE in .env}
@@ -20,7 +19,7 @@ services:
     volumes:
       - mysql_data:/var/lib/mysql
     healthcheck:
-      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u\"$${MYSQL_USER}\" -p\"$${MYSQL_PASSWORD}\" --silent"]
+      test: ["CMD-SHELL", "MYSQL_PWD=\"$${MYSQL_PASSWORD}\" mysql --host=127.0.0.1 --connect-timeout=3 --user=\"$${MYSQL_USER}\" \"$${MYSQL_DATABASE}\" --execute='SELECT 1' > /dev/null"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -28,11 +27,10 @@ services:
 
   redis:
     image: redis:${REDIS_TAG:-alpine}
-    container_name: local_redis
     restart: unless-stopped
     logging: *bounded-logging
     ports:
-      - "127.0.0.1:6379:6379"
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
     volumes:
       - redis_data:/data
     healthcheck:
@@ -44,11 +42,10 @@ services:
 
   postgres:
     image: postgres:${POSTGRES_TAG:-16-alpine}
-    container_name: local_postgres
     restart: unless-stopped
     logging: *bounded-logging
     ports:
-      - "127.0.0.1:5432:5432"
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     environment:
       POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER in .env}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
@@ -56,7 +53,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      test: ["CMD-SHELL", "PGPASSWORD=\"$${POSTGRES_PASSWORD}\" PGCONNECT_TIMEOUT=3 psql --host=postgres --username=\"$${POSTGRES_USER}\" --dbname=\"$${POSTGRES_DB}\" --no-psqlrc --set=ON_ERROR_STOP=1 --command='SELECT 1' > /dev/null"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -64,11 +61,10 @@ services:
 
   mongodb:
     image: mongo:${MONGO_TAG:-7.0}
-    container_name: local_mongo
     restart: unless-stopped
     logging: *bounded-logging
     ports:
-      - "127.0.0.1:27017:27017"
+      - "127.0.0.1:${MONGO_PORT:-27017}:27017"
     environment:
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USERNAME:?Set MONGO_ROOT_USERNAME in .env}
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:?Set MONGO_ROOT_PASSWORD in .env}
@@ -83,12 +79,11 @@ services:
 
   mailpit:
     image: axllent/mailpit:${MAILPIT_TAG:-latest}
-    container_name: local_mailpit
     restart: unless-stopped
     logging: *bounded-logging
     ports:
-      - "127.0.0.1:8025:8025" # Web UI for viewing emails
-      - "127.0.0.1:1025:1025" # SMTP server port
+      - "127.0.0.1:${MAILPIT_HTTP_PORT:-8025}:8025"
+      - "127.0.0.1:${MAILPIT_SMTP_PORT:-1025}:1025"
     environment:
       MP_MAX_MESSAGES: 5000
     healthcheck:
@@ -102,22 +97,29 @@ services:
     image: prom/prometheus:${PROMETHEUS_TAG:-latest}
     restart: unless-stopped
     logging: *bounded-logging
-    profiles: ["monitoring"]
+    profiles: ["monitoring", "monitoring-redis", "monitoring-postgres", "monitoring-mysql"]
     ports:
-      - "127.0.0.1:9090:9090"
+      - "127.0.0.1:${PROMETHEUS_PORT:-9090}:9090"
     volumes:
       - prometheus_data:/prometheus
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:9090/-/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
   grafana:
     image: grafana/grafana:${GRAFANA_TAG:-latest}
     restart: unless-stopped
     logging: *bounded-logging
-    profiles: ["monitoring"]
+    profiles: ["monitoring", "monitoring-redis", "monitoring-postgres", "monitoring-mysql"]
     depends_on:
-      - prometheus
+      prometheus:
+        condition: service_healthy
     ports:
-      - "127.0.0.1:3000:3000"
+      - "127.0.0.1:${GRAFANA_PORT:-3000}:3000"
     environment:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:?Set GRAFANA_ADMIN_USER in .env}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?Set GRAFANA_ADMIN_PASSWORD in .env}
@@ -125,6 +127,14 @@ services:
     volumes:
       - grafana_data:/var/lib/grafana
       - ./grafana/provisioning/datasources/prometheus.yml:/etc/grafana/provisioning/datasources/prometheus.yml:ro
+      - ./grafana/provisioning/dashboards/default.yml:/etc/grafana/provisioning/dashboards/default.yml:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:3000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
   redisinsight:
     image: redis/redisinsight:${REDISINSIGHT_TAG:-latest}
@@ -132,7 +142,7 @@ services:
     logging: *bounded-logging
     profiles: ["admin"]
     ports:
-      - "127.0.0.1:5540:5540"
+      - "127.0.0.1:${REDISINSIGHT_PORT:-5540}:5540"
     volumes:
       - redisinsight_data:/data
 
@@ -143,7 +153,7 @@ services:
     profiles: ["storage"]
     command: ["mini", "-dir=/data"]
     ports:
-      - "127.0.0.1:8333:8333"
+      - "127.0.0.1:${S3_PORT:-8333}:8333"
     environment:
       AWS_ACCESS_KEY_ID: ${S3_ACCESS_KEY:?Set S3_ACCESS_KEY in .env}
       AWS_SECRET_ACCESS_KEY: ${S3_SECRET_KEY:?Set S3_SECRET_KEY in .env}
@@ -158,7 +168,7 @@ services:
     profiles: ["mocking"]
     command: ["--global-response-templating", "--verbose"]
     ports:
-      - "127.0.0.1:8081:8080"
+      - "127.0.0.1:${WIREMOCK_PORT:-8081}:8080"
     volumes:
       - ./wiremock/mappings:/home/wiremock/mappings:ro
       - ./wiremock/__files:/home/wiremock/__files:ro
@@ -174,7 +184,7 @@ services:
       postgres:
         condition: service_healthy
     ports:
-      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:${ADMINER_PORT:-8080}:8080"
     environment:
       ADMINER_DEFAULT_SERVER: mysql
 
@@ -187,12 +197,74 @@ services:
       mongodb:
         condition: service_healthy
     ports:
-      - "127.0.0.1:8082:8081"
+      - "127.0.0.1:${MONGO_EXPRESS_PORT:-8082}:8081"
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        ME_CONFIG_MONGODB_URL="$$(node -e '
+          const user = encodeURIComponent(process.env.MONGO_ROOT_USERNAME);
+          const password = encodeURIComponent(process.env.MONGO_ROOT_PASSWORD);
+          process.stdout.write(`mongodb://$${user}:$${password}@mongodb:27017/?authSource=admin`);
+        ')"
+        export ME_CONFIG_MONGODB_URL
+        exec /docker-entrypoint.sh mongo-express
     environment:
-      ME_CONFIG_MONGODB_URL: mongodb://${MONGO_ROOT_USERNAME:?Set MONGO_ROOT_USERNAME in .env}:${MONGO_ROOT_PASSWORD:?Set MONGO_ROOT_PASSWORD in .env}@mongodb:27017/?authSource=admin
+      MONGO_ROOT_USERNAME: ${MONGO_ROOT_USERNAME:?Set MONGO_ROOT_USERNAME in .env}
+      MONGO_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:?Set MONGO_ROOT_PASSWORD in .env}
       ME_CONFIG_BASICAUTH_ENABLED: "true"
       ME_CONFIG_BASICAUTH_USERNAME: ${MONGO_EXPRESS_USER:?Set MONGO_EXPRESS_USER in .env}
       ME_CONFIG_BASICAUTH_PASSWORD: ${MONGO_EXPRESS_PASSWORD:?Set MONGO_EXPRESS_PASSWORD in .env}
+
+  jaeger:
+    image: jaegertracing/jaeger:${JAEGER_TAG:-2.6.0}
+    restart: unless-stopped
+    logging: *bounded-logging
+    profiles: ["tracing"]
+    command: ["--config=/etc/jaeger/config.yml"]
+    ports:
+      - "127.0.0.1:${JAEGER_PORT:-16686}:16686"
+      - "127.0.0.1:${OTLP_GRPC_PORT:-4317}:4317"
+      - "127.0.0.1:${OTLP_HTTP_PORT:-4318}:4318"
+    volumes:
+      - ./jaeger/config.yml:/etc/jaeger/config.yml:ro
+
+  redis-exporter:
+    image: oliver006/redis_exporter:${REDIS_EXPORTER_TAG:-latest}
+    restart: unless-stopped
+    logging: *bounded-logging
+    profiles: ["monitoring-redis"]
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      REDIS_ADDR: redis://redis:6379
+
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:${POSTGRES_EXPORTER_TAG:-latest}
+    restart: unless-stopped
+    logging: *bounded-logging
+    profiles: ["monitoring-postgres"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATA_SOURCE_URI: postgres:5432/${POSTGRES_DB:?Set POSTGRES_DB in .env}?sslmode=disable
+      DATA_SOURCE_USER: ${POSTGRES_USER:?Set POSTGRES_USER in .env}
+      DATA_SOURCE_PASS: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+
+  mysql-exporter:
+    image: prom/mysqld-exporter:${MYSQL_EXPORTER_TAG:-latest}
+    restart: unless-stopped
+    logging: *bounded-logging
+    profiles: ["monitoring-mysql"]
+    depends_on:
+      mysql:
+        condition: service_healthy
+    network_mode: service:mysql
+    command: ["--mysqld.address=127.0.0.1:3306", "--mysqld.username=root"]
+    environment:
+      MYSQLD_EXPORTER_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD in .env}
 
 volumes:
   mysql_data:

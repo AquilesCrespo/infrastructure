@@ -1,0 +1,9 @@
+{
+  "request": {"method": "GET", "urlPath": "/dev/delay"},
+  "response": {
+    "status": 200,
+    "fixedDelayMilliseconds": 1500,
+    "headers": {"Content-Type": "application/json"},
+    "jsonBody": {"status": "ok", "delayMs": 1500}
+  }
+}

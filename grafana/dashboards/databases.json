@@ -1,0 +1,85 @@
+{
+  "uid": "development-databases",
+  "title": "Development databases",
+  "schemaVersion": 39,
+  "version": 1,
+  "tags": ["development", "databases"],
+  "timezone": "browser",
+  "refresh": "15s",
+  "time": {"from": "now-30m", "to": "now"},
+  "templating": {
+    "list": [
+      {
+        "name": "prometheus_source",
+        "type": "datasource",
+        "query": "prometheus",
+        "regex": "/^Prometheus$/",
+        "refresh": 1,
+        "hide": 2
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Database connectivity (1 = connected)",
+      "type": "stat",
+      "datasource": {"type": "prometheus", "uid": "${prometheus_source}"},
+      "gridPos": {"x": 0, "y": 0, "w": 24, "h": 5},
+      "targets": [
+        {"refId": "A", "expr": "redis_up", "legendFormat": "Redis"},
+        {"refId": "B", "expr": "pg_up", "legendFormat": "PostgreSQL"},
+        {"refId": "C", "expr": "mysql_up", "legendFormat": "MySQL"}
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Redis commands / second",
+      "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "${prometheus_source}"},
+      "gridPos": {"x": 0, "y": 5, "w": 12, "h": 8},
+      "targets": [{"refId": "A", "expr": "rate(redis_commands_processed_total[5m])", "legendFormat": "Commands/s"}]
+    },
+    {
+      "id": 3,
+      "title": "Redis used memory",
+      "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "${prometheus_source}"},
+      "fieldConfig": {"defaults": {"unit": "bytes"}},
+      "gridPos": {"x": 12, "y": 5, "w": 12, "h": 8},
+      "targets": [{"refId": "A", "expr": "redis_memory_used_bytes", "legendFormat": "Used memory"}]
+    },
+    {
+      "id": 4,
+      "title": "PostgreSQL connections",
+      "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "${prometheus_source}"},
+      "gridPos": {"x": 0, "y": 13, "w": 12, "h": 8},
+      "targets": [{"refId": "A", "expr": "pg_stat_database_numbackends", "legendFormat": "{{datname}}"}]
+    },
+    {
+      "id": 5,
+      "title": "PostgreSQL commits / second",
+      "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "${prometheus_source}"},
+      "gridPos": {"x": 12, "y": 13, "w": 12, "h": 8},
+      "targets": [{"refId": "A", "expr": "rate(pg_stat_database_xact_commit[5m])", "legendFormat": "{{datname}}"}]
+    },
+    {
+      "id": 6,
+      "title": "MySQL connected threads",
+      "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "${prometheus_source}"},
+      "gridPos": {"x": 0, "y": 21, "w": 12, "h": 8},
+      "targets": [{"refId": "A", "expr": "mysql_global_status_threads_connected", "legendFormat": "Connections"}]
+    },
+    {
+      "id": 7,
+      "title": "MySQL queries / second",
+      "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "${prometheus_source}"},
+      "gridPos": {"x": 12, "y": 21, "w": 12, "h": 8},
+      "targets": [{"refId": "A", "expr": "rate(mysql_global_status_questions[5m])", "legendFormat": "Queries/s"}]
+    }
+  ]
+}

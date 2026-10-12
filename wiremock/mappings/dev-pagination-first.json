@@ -1,0 +1,16 @@
+{
+  "request": {
+    "method": "GET",
+    "urlPath": "/dev/customers",
+    "queryParameters": {"page": {"equalTo": "1"}}
+  },
+  "response": {
+    "status": 200,
+    "headers": {"Content-Type": "application/json"},
+    "jsonBody": {
+      "items": [{"id": 1, "name": "Alice Demo"}],
+      "page": 1,
+      "nextPage": 2
+    }
+  }
+}
