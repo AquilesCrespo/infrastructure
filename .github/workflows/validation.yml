@@ -29,18 +29,30 @@ jobs:
       - name: Validate configuration and syntax
         run: |
           docker compose --profile "*" config --quiet
-          bash -n scripts/*.sh tests/*.sh
+          for file in scripts/*.sh scripts/lib/*.sh tests/*.sh; do bash -n "$file"; done
+          shellcheck --external-sources scripts/*.sh scripts/lib/*.sh tests/*.sh
           node --check tests/observability.mjs
           git diff --check
       - name: Run mocked regression tests
         run: |
+          bash tests/shell-ui.sh
           bash tests/doctor.sh
           bash tests/scheduled-backup.sh
+
+  windows:
+    name: Native PowerShell regression checks
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify PowerShell scripts and Windows safeguards
+        shell: pwsh
+        run: ./tests/windows.ps1
 
   integration:
     name: Isolated integration tests
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    needs: checks
+    needs: [checks, windows]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -52,5 +64,8 @@ jobs:
           node-version: "22"
       - name: Verify database recovery and repeatable seeds
         run: bash tests/db-workflows.sh
+      - name: Verify native PowerShell database workflows
+        shell: pwsh
+        run: ./tests/windows-integration.ps1
       - name: Verify credentials, readiness, and observability
         run: node tests/observability.mjs

@@ -3,15 +3,36 @@ set -Eeuo pipefail
 umask 077
 
 root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=scripts/lib/common.sh
+source "$root/scripts/lib/common.sh"
+usage() {
+  cat <<'EOF'
+Usage: bash scripts/install-backup-timer.sh
+       bash scripts/install-backup-timer.sh --help
+
+Installs a disabled daily systemd user timer; does not run backups or enable it.
+Requires Linux systemd user services, mkdir, and cksum. Timer execution requires
+Docker access and the scheduled-backup script's dependencies.
+Export Compose selectors before installation to capture them in the user units.
+
+Colors are automatic on terminals; set NO_COLOR to disable them.
+EOF
+}
+if [[ $# -eq 1 && ( "$1" == --help || "$1" == -h ) ]]; then
+  usage
+  exit 0
+fi
 if [[ $# -ne 0 ]]; then
-  printf 'Usage: bash scripts/install-backup-timer.sh\nInstalls a disabled daily user timer; does not run backups or enable it.\n' >&2
+  log_status FAIL 'This installer accepts no arguments except --help.'
+  usage >&2
   exit 1
 fi
-trap 'printf "Backup timer installation failed at line %s.\n" "$LINENO" >&2' ERR
+trap 'abort "$?" "Backup timer installation failed at line $LINENO."' ERR
+require_commands systemctl mkdir cksum || exit 1
 
 for value in "$root" "${COMPOSE_PROJECT_NAME:-}" "${COMPOSE_ENV_FILES:-}" "${COMPOSE_FILE:-}"; do
-  if [[ "$value" == *['"'\%\\]* || "$value" == *$'\n'* || "$value" == *$'\r'* ]]; then
-    printf 'Paths and Compose selectors must not contain quotes, percent signs, backslashes, or newlines.\n' >&2
+  if [[ "$value" == *['"'%\\]* || "$value" == *$'\n'* || "$value" == *$'\r'* ]]; then
+    log_status FAIL 'Paths and Compose selectors must not contain quotes, percent signs, backslashes, or newlines.'
     exit 1
   fi
 done
@@ -21,7 +42,7 @@ identity="$(printf '%s' "$root:${COMPOSE_PROJECT_NAME:-}:${COMPOSE_ENV_FILES:-}:
 unit="infrastructure-backup-${identity%% *}"
 for file in "$directory/$unit.service" "$directory/$unit.timer"; do
   if [[ -e "$file" || -L "$file" ]]; then
-    printf 'Unit already exists; inspect it before reinstalling: %s\n' "$file" >&2
+    log_status FAIL "Unit already exists; inspect it before reinstalling: $file"
     exit 1
   fi
 done
@@ -55,6 +76,9 @@ Unit=$unit.service
 WantedBy=timers.target
 EOF
 systemctl --user daemon-reload
-printf 'Installed disabled timer. Enable explicitly:\n  systemctl --user enable --now %s.timer\n' "$unit"
-printf 'Inspect runs:\n  journalctl --user -u %s.service\n' "$unit"
-printf 'Disable:\n  systemctl --user disable --now %s.timer\n' "$unit"
+log_status PASS 'Installed disabled timer. Enable explicitly:'
+printf '  systemctl --user enable --now %s.timer\n' "$unit"
+log_status INFO 'Inspect runs:'
+printf '  journalctl --user -u %s.service\n' "$unit"
+log_status INFO 'Disable:'
+printf '  systemctl --user disable --now %s.timer\n' "$unit"

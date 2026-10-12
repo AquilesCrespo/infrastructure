@@ -28,6 +28,7 @@ Examples use default ports and placeholder credentials unless stated otherwise.
 | Diagnose configuration or connection failures | [Troubleshooting](./troubleshooting.md) |
 | Validate changes without modifying development data | [Verification](./verification.md) |
 | Configure Copilot and browser automation | [AI assistant tools](./agent-tools.md) |
+| Work on Windows without a Bash shell | [Native Windows development](./windows.md) |
 
 ## Application examples
 

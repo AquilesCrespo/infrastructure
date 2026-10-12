@@ -3,6 +3,8 @@
 [Documentation index](./README.md) | [Project README](../README.md)
 
 Run all commands from the repository root.
+Windows users can use the equivalent [native PowerShell commands](./windows.md#commands)
+and [Task Scheduler workflow](./windows.md#opt-in-scheduled-backups) without Bash.
 
 ## Backup and restore
 
@@ -22,6 +24,10 @@ files are never overwritten. Files are created with private permissions, and
 only published at the requested path after the dump succeeds. Failed partial
 files are removed. `backups/` is ignored by Git; treat backups as sensitive and
 keep them out of source control if you store them anywhere else.
+Successful backups report file size in bytes and elapsed seconds; restores report
+elapsed seconds. These summaries do not replace checking application data after
+recovery. See [shell command usability](./troubleshooting.md#shell-command-usability)
+for help, status colors, and plain-log behavior.
 
 | Service | Backup scope | Restore behavior |
 |---|---|---|

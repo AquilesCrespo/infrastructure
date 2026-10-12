@@ -32,6 +32,9 @@ for setup examples and the recommended development workflow.
 - Bash and GNU coreutils for the diagnostic and database scripts.
 - Your application's runtime/SDK, installed separately.
 
+For native Windows/PowerShell setup and commands, use the
+[Windows guide](./docs/windows.md); the Bash examples below are for Linux/WSL.
+
 The optional backup timer requires Linux systemd user services and `flock`.
 Integration tests have additional requirements in the
 [verification guide](./docs/verification.md).
@@ -56,10 +59,11 @@ For a smaller stack, start specific services, for example:
 
 ```sh
 docker compose up -d postgres redis mailpit
+bash scripts/doctor.sh postgres redis mailpit
 ```
 
-Doctor requires all core services by default, so it will report intentionally
-omitted core services as missing. See [diagnostics](./docs/troubleshooting.md).
+Doctor requires all core services by default; pass service names to check only
+your smaller stack. See [diagnostics](./docs/troubleshooting.md).
 Optional tools are selected through [profiles](./docs/configuration.md#profiles).
 For everyday work, prefer the [lightweight workflow](./docs/configuration.md#recommended-lightweight-workflow)
 over starting all services.
@@ -100,4 +104,5 @@ S3-compatible local testing also does not guarantee full AWS S3 behavior parity.
 | [API mocking](./docs/mocking.md) | WireMock fixtures and failure/retry scenarios |
 | [Troubleshooting](./docs/troubleshooting.md) | Doctor checks, limitations, logs, and common failures |
 | [Verification](./docs/verification.md) | Regression and isolated integration tests |
+| [Windows development](./docs/windows.md) | Native PowerShell commands and opt-in Task Scheduler backups |
 | [Application examples](./docs/examples/README.md) | PHP, Node.js, Rust, and .NET project setup |

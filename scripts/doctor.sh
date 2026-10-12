@@ -1,26 +1,60 @@
 #!/usr/bin/env bash
+# Container commands intentionally expand variables in the container, not here.
+# shellcheck disable=SC2016
 set -Eeuo pipefail
 
 root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=scripts/lib/common.sh
+source "$root/scripts/lib/common.sh"
 compose=(docker compose --project-directory "$root")
 failures=0
+passes=0
+skips=0
 
 report_failure() {
-  printf 'FAIL %s\n' "$*" >&2
+  log_status FAIL "$*"
   failures=$((failures + 1))
 }
 
-if [[ $# -ne 0 ]]; then
-  printf 'Usage: bash scripts/doctor.sh\nEnable optional checks with COMPOSE_PROFILES (for example monitoring-redis,tracing).\n' >&2
-  exit 1
-fi
+report_pass() {
+  log_status PASS "$*"
+  passes=$((passes + 1))
+}
 
-for tool in docker timeout; do
-  if ! command -v "$tool" > /dev/null; then
-    report_failure "Install $tool before running diagnostics."
+report_skip() {
+  log_status SKIP "$*"
+  skips=$((skips + 1))
+}
+
+usage() {
+  cat <<'EOF'
+Usage: bash scripts/doctor.sh [SERVICE ...]
+       bash scripts/doctor.sh --help
+
+Without service names, check all core and profile-selected services plus running
+optional services. With names, check only those services and require each one.
+This command is read-only. Requires Docker Compose, Bash, and GNU timeout.
+
+Examples:
+  bash scripts/doctor.sh postgres redis mailpit
+  COMPOSE_PROFILES=monitoring-postgres,tracing bash scripts/doctor.sh
+
+Colors are automatic on terminals; set NO_COLOR to disable them.
+EOF
+}
+
+if [[ $# -eq 1 && ( "$1" == --help || "$1" == -h ) ]]; then
+  usage
+  exit 0
+fi
+for argument in "$@"; do
+  if [[ "$argument" == -* ]]; then
+    report_failure "Unknown option: $argument"
+    usage >&2
     exit 1
   fi
 done
+require_commands docker timeout || exit 1
 
 if ! timeout 15 "${compose[@]}" version > /dev/null 2>&1; then
   report_failure "Docker Compose is unavailable; install or repair the Compose plugin."
@@ -30,7 +64,7 @@ if ! timeout 15 "${compose[@]}" --profile '*' config --quiet > /dev/null 2>&1; t
   report_failure "Compose configuration is invalid. Check .env against .env.example, required values, image tags, and YAML syntax."
   exit 1
 fi
-printf 'PASS Compose configuration\n'
+report_pass 'Compose configuration'
 if ! timeout 15 docker info > /dev/null 2>&1; then
   report_failure "Docker is unreachable. Check the daemon, active context, and socket permissions."
   exit 1
@@ -40,6 +74,28 @@ if ! services="$(timeout 15 "${compose[@]}" --profile '*' config --services 2>/d
    [[ -z "$services" || -z "$selected" ]]; then
   report_failure "Cannot enumerate Compose services; check configuration and selected profiles."
   exit 1
+fi
+
+if [[ $# -gt 0 ]]; then
+  requested=""
+  for argument in "$@"; do
+    found=false
+    while IFS= read -r service; do
+      if [[ "$argument" == "$service" ]]; then
+        found=true
+        break
+      fi
+    done <<< "$services"
+    if [[ "$found" != true ]]; then
+      report_failure "Unknown service: $argument. Use docker compose --profile '*' config --services to list names."
+      exit 1
+    fi
+    if [[ $'\n'"$requested"$'\n' != *$'\n'"$argument"$'\n'* ]]; then
+      requested+="${requested:+$'\n'}$argument"
+    fi
+  done
+  services="$requested"
+  selected="$requested"
 fi
 
 database_check() {
@@ -96,7 +152,7 @@ while IFS= read -r service; do
     if [[ "$required" == true ]]; then
       report_failure "$service: no container. Start it with docker compose up -d $service."
     else
-      printf 'SKIP %s: optional service not created\n' "$service"
+      report_skip "$service: optional service not created"
     fi
     continue
   fi
@@ -113,21 +169,21 @@ while IFS= read -r service; do
       if [[ "$required" == true ]]; then
         report_failure "$service: container is $status. Start it with docker compose up -d $service."
       else
-        printf 'SKIP %s: optional container is %s\n' "$service" "$status"
+        report_skip "$service: optional container is $status"
       fi
       continue
     fi
-    printf 'PASS %s: running\n' "$service"
+    report_pass "$service: running"
     case "$health" in
-      healthy) printf 'PASS %s: healthy\n' "$service" ;;
-      none) printf 'INFO %s: no Docker healthcheck configured\n' "$service" ;;
+      healthy) report_pass "$service: healthy" ;;
+      none) log_status WARN "$service: no Docker healthcheck configured" ;;
       *) report_failure "$service: health is $health. Inspect docker compose logs --tail 100 $service locally." ;;
     esac
 
     if ! ports="$(timeout 15 docker port "$id" 2>/dev/null)"; then
       report_failure "$service: cannot inspect published ports."
     elif [[ "$service" == *-exporter ]]; then
-      printf 'INFO %s: internal metrics endpoint; verify the scrape in Prometheus Targets\n' "$service"
+      log_status INFO "$service: internal metrics endpoint; verify the scrape in Prometheus Targets"
     elif [[ -z "$ports" ]]; then
       report_failure "$service: no published ports; recreate it with the development Compose configuration."
     else
@@ -140,7 +196,7 @@ while IFS= read -r service; do
           continue
         fi
         if timeout 3 bash -c 'exec 3<>/dev/tcp/127.0.0.1/"$1"' bash "$port" > /dev/null 2>&1; then
-          printf 'PASS %s: %s accepts TCP connections\n' "$service" "$endpoint"
+          report_pass "$service: $endpoint accepts TCP connections"
         else
           report_failure "$service: $endpoint is unreachable from this host. Check the Docker context, port publication, and service listener."
         fi
@@ -149,7 +205,7 @@ while IFS= read -r service; do
     case "$service" in
       mysql|postgres|mongodb|redis)
         if database_check "$service" "$id" > /dev/null 2>&1; then
-          printf 'PASS %s: database connection\n' "$service"
+          report_pass "$service: database connection"
         else
           report_failure "$service: database connection failed or timed out. Check readiness and container credentials; .env changes do not update stored database accounts."
         fi
@@ -158,8 +214,9 @@ while IFS= read -r service; do
   done <<< "$ids"
 done <<< "$services"
 
+log_status INFO "Summary: $passes passed, $failures failed, $skips skipped checks (${SECONDS}s)."
 if [[ "$failures" -gt 0 ]]; then
-  printf 'Doctor found %s failed check(s).\n' "$failures" >&2
+  log_status FAIL "Doctor found $failures failed check(s)."
   exit 1
 fi
-printf 'Doctor passed all required and running-service checks.\n'
+log_status PASS 'Doctor passed all required and running-service checks.'

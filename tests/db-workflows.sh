@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Container shell expressions and MongoDB operators must remain literal here.
+# shellcheck disable=SC2016
 set -Eeuo pipefail
 
 root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"

@@ -3,11 +3,21 @@
 [Documentation index](./README.md) | [Project README](../README.md)
 
 ```sh
+for file in scripts/*.sh scripts/lib/*.sh tests/*.sh; do bash -n "$file"; done
+shellcheck --external-sources scripts/*.sh scripts/lib/*.sh tests/*.sh
+bash tests/shell-ui.sh
 bash tests/doctor.sh
 bash tests/scheduled-backup.sh
 bash tests/db-workflows.sh
 node tests/observability.mjs
 ```
+
+ShellCheck is a development/CI dependency, not required to run the operational
+scripts. The shell UI test requires util-linux `script` to exercise actual
+pseudo-terminal colors, as well as Bash and standard Linux utilities. It verifies
+plain redirected output, per-stream colors, `NO_COLOR`, `TERM=dumb`, help without
+Docker/systemd access, dependency errors, backup summaries, and preserved failure
+exit codes. Doctor's mocked tests also verify selected-service checks and counts.
 
 The retention/timer test uses fake Docker and systemctl commands plus
 `systemd-analyze verify` to validate unit syntax, never enabling a real timer.
@@ -39,11 +49,17 @@ The test uses the same database tag variables/defaults as the development stack.
 ## Continuous integration
 
 The [GitHub Actions workflow](../.github/workflows/validation.yml) runs Compose
-configuration, Bash/Node syntax, whitespace, and mocked regression checks on
+configuration, Bash/Node syntax, ShellCheck, whitespace, and mocked regression checks on
 pushes and pull requests. It uses `.env.example`, never your private `.env`.
+The Windows runner also executes `tests/windows.ps1` for native PowerShell
+regressions, including Windows ACLs and mocked Task Scheduler registration.
+It does not require a Docker daemon or register real tasks.
 
 On Mondays at 06:00 UTC, and through **Actions > Infrastructure validation >
 Run workflow**, it also runs the database and observability integration tests.
+The Linux runner additionally executes `tests/windows-integration.ps1` under
+PowerShell against isolated actual databases. See the
+[Windows guide](./windows.md#verification) for local commands and platform limits.
 Scheduled runs use the default branch and require the workflow to be committed
 and pushed. Tests use isolated projects, volumes, and disposable credentials;
 they never connect to your workstation's development stack.

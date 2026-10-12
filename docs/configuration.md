@@ -158,9 +158,11 @@ docker compose up -d --wait wiremock jaeger
 
 These commands do not stop previously running services. Adminer depends on both
 relational databases, so selecting it also starts MySQL and PostgreSQL.
-Doctor currently expects all core services; intentionally omitted services are
-reported as missing. For a partial stack, inspect `docker compose ps` and the
-application's own connectivity checks instead.
+Doctor expects all core services by default. For a partial stack, use
+`bash scripts/doctor.sh postgres redis mailpit` to check only those services.
+Selected services are required even if their profile is disabled; dependencies
+are not automatically added to the checks. Keep application-specific connectivity
+tests too.
 
 MySQL and PostgreSQL healthchecks run authenticated queries against the configured
 database. PostgreSQL uses its service address rather than loopback, which the

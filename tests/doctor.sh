@@ -96,7 +96,8 @@ unset COMPOSE_PROFILES
 check() {
   local scenario="$1" expected="$2" message="$3" status=0
   : > "$work/calls"
-  SCENARIO="$scenario" bash "$root/scripts/doctor.sh" > "$work/output" 2>&1 || status=$?
+  shift 3
+  SCENARIO="$scenario" bash "$root/scripts/doctor.sh" "$@" > "$work/output" 2>&1 || status=$?
   [[ "$status" == "$expected" ]]
   grep -Fq "$message" "$work/output"
   if grep -q PRIVATE_CREDENTIAL "$work/output"; then
@@ -110,6 +111,7 @@ check() {
 }
 
 check healthy 0 'Doctor passed'
+grep -q 'Summary: 20 passed, 0 failed, 1 skipped' "$work/output"
 grep -q 'SKIP redisinsight' "$work/output"
 grep -Fq 'psql --host=postgres' "$work/calls"
 check invalid-config 1 'Compose configuration is invalid'
@@ -130,4 +132,19 @@ check exporter 0 'internal metrics endpoint'
 export COMPOSE_PROFILES=admin
 check healthy 1 'redisinsight: no container'
 check optional-stopped 1 'redisinsight: container is exited'
+check missing 0 'Doctor passed' postgres redis mailpit
+grep -q 'Summary: 12 passed, 0 failed, 0 skipped' "$work/output"
+if grep -Eq 'ps --all --quiet (mysql|mongodb|redisinsight)$' "$work/calls"; then
+  printf 'Doctor queried an unselected service.\n' >&2
+  exit 1
+fi
+check healthy 0 'Doctor passed' redis redis
+[[ "$(grep -c 'ps --all --quiet redis$' "$work/calls")" == 1 ]]
+check healthy 1 'redisinsight: no container' redisinsight
+check healthy 1 'Unknown service' redis nonexistent
+if grep -q 'ps --all' "$work/calls"; then exit 1; fi
+check healthy 1 'Unknown option' --invalid
+[[ ! -s "$work/calls" ]]
+check healthy 0 'Usage:' --help
+[[ ! -s "$work/calls" ]]
 printf 'PASS: doctor success, failures, optional profiles, continued checks, credential suppression, and read-only Docker commands.\n'

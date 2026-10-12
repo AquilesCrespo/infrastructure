@@ -42,8 +42,12 @@ every integration test for a small change.
 docker compose --profile "*" config --quiet
 
 # Shell syntax and whitespace checks.
-bash -n scripts/*.sh tests/*.sh
+for file in scripts/*.sh scripts/lib/*.sh tests/*.sh; do bash -n "$file"; done
+shellcheck --external-sources scripts/*.sh scripts/lib/*.sh tests/*.sh
 git diff --check
+
+# Shared shell output, help, and error behavior; uses util-linux script.
+bash tests/shell-ui.sh
 
 # Mocked diagnostic behavior; does not connect to Docker.
 bash tests/doctor.sh
@@ -81,7 +85,8 @@ See [verification](../docs/verification.md) for dependencies and scope.
 - Scripts resolve the repository root from their own location and honor Compose
   selectors such as `COMPOSE_ENV_FILES` and `COMPOSE_PROJECT_NAME`. Follow the
   existing `set -Eeuo pipefail`, explicit failure reporting, and private backup
-  permissions patterns.
+  permissions patterns. Reuse `scripts/lib/common.sh` for status output and
+  dependency checks; preserve per-stream terminal detection and `NO_COLOR`.
 - Backups refuse overwrite and publish only completed dumps. Restore requires
   `--confirm`. Demo seeds upsert reserved IDs in isolated demo tables/collections;
   Redis and application-owned data are not reset by seeding.
@@ -101,7 +106,8 @@ See [verification](../docs/verification.md) for dependencies and scope.
 Explicit service targets avoid starting unrelated core services. For example,
 `docker compose up -d redis redisinsight` starts Redis and its UI; profiles select
 optional groups, and changing profile selection does not stop already running
-containers. Doctor still requires all core services by default.
+containers. Doctor still requires all core services by default; pass service names for
+partial-stack diagnostics.
 
 Use the same Compose project/env selectors for startup, diagnostics, backups,
 and restores. Changing project names selects different volumes, not migrated
