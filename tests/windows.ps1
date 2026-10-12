@@ -115,8 +115,22 @@ try {
     }
     Expect-Failure { Assert-NoReparsePoint $link } 'symlink or junction'
     Remove-Item -LiteralPath $link -Force
+    $registrationState = @{ Task = $null; Name = $null }
+    function Register-ScheduledTask {
+        param($TaskName, $InputObject)
+        $registrationState.Task = $InputObject
+        $registrationState.Name = $TaskName
+    }
+    $registrationProbe = Join-Path $work 'registration.ps1'
+    [IO.File]::WriteAllText($registrationProbe,
+        'Register-ScheduledTask -TaskName scope-probe -InputObject ([pscustomobject]@{ Settings = @{ Enabled = $false } })')
+    & $registrationProbe
+    Assert ($null -ne $registrationState.Task) 'Task registration visible across script scopes'
+    Assert ($registrationState.Name -eq 'scope-probe') 'Registered task name visible across script scopes'
+    Assert (-not $registrationState.Task.Settings.Enabled) 'Registered task settings visible across script scopes'
     if ($IsWindows) {
-        $script:registeredTask = $null
+        $registrationState.Task = $null
+        $registrationState.Name = $null
         function Get-ScheduledTask { return @() }
         function New-ScheduledTaskAction {
             param($Execute, $Argument, $WorkingDirectory)
@@ -135,17 +149,14 @@ try {
             param($Action, $Trigger, $Settings, $Principal)
             [pscustomobject]@{ Action = $Action; Trigger = $Trigger; Settings = $Settings; Principal = $Principal }
         }
-        function Register-ScheduledTask {
-            param($TaskName, $InputObject)
-            $script:registeredTask = $InputObject
-        }
         & "$root/scripts/windows/install-backup-task.ps1"
-        Assert ($null -ne $script:registeredTask) 'Task registration invoked'
-        Assert (-not $script:registeredTask.Settings.Enabled) 'Task installed disabled'
-        Assert ($script:registeredTask.Principal.LogonType -eq 'Interactive') 'No stored password'
-        Assert ($script:registeredTask.Principal.RunLevel -eq 'Limited') 'No elevation requested'
-        Assert ($script:registeredTask.Trigger.At -eq '03:00') 'Daily task time'
-        Assert ($script:registeredTask.Action.Argument -match '-RetentionDays 7') 'Task retention default'
+        Assert ($null -ne $registrationState.Task) 'Task registration invoked'
+        Assert ($registrationState.Name -match '^Infrastructure-Backup-[0-9A-F]{16}$') 'Task registration name'
+        Assert (-not $registrationState.Task.Settings.Enabled) 'Task installed disabled'
+        Assert ($registrationState.Task.Principal.LogonType -eq 'Interactive') 'No stored password'
+        Assert ($registrationState.Task.Principal.RunLevel -eq 'Limited') 'No elevation requested'
+        Assert ($registrationState.Task.Trigger.At -eq '03:00') 'Daily task time'
+        Assert ($registrationState.Task.Action.Argument -match '-RetentionDays 7') 'Task retention default'
     }
     Write-Status PASS 'PowerShell parsing, help, binary IO, private permissions, timeouts, backup/restore safeguards, retention, locking, and reparse-point rejection.'
 } finally {
