@@ -137,6 +137,88 @@ The previous `wiremock_data` volume declaration remains for rollback, but is
 not mounted. No fixture files were found in the running container during this
 change. If rolling back, restore the old volume mount without deleting the volume.
 
+## Database backup and restore
+
+Run `bash scripts/db.sh` from this directory. The script uses the running
+containers' credentials, so it does not source or print `.env`. Services must
+already be running; these commands never start, stop, or recreate them.
+
+```sh
+mkdir -p backups
+bash scripts/db.sh backup mysql backups/mysql.sql
+bash scripts/db.sh backup postgres backups/postgres.dump
+bash scripts/db.sh backup mongodb backups/mongodb.archive.gz
+```
+
+Choose a new filename for each backup (for example, include a date). Existing
+files are never overwritten. Files are created with private permissions, and
+only published at the requested path after the dump succeeds. Failed partial
+files are removed. `backups/` is ignored by Git; treat backups as sensitive and
+keep them out of source control if you store them anywhere else.
+
+| Service | Backup scope | Restore behavior |
+|---|---|---|
+| MySQL | Configured `MYSQL_DATABASE`, including routines, events, and triggers | Loads SQL into the configured database; replaces tables present in the dump |
+| PostgreSQL | Configured `POSTGRES_DB`; no role definitions, ownership, or ACLs | Cleans and restores backed-up objects in one transaction, owned by the configured user |
+| MongoDB | `mongodump` default database scope, including any exported admin metadata | Drops and restores collections present in the archive, excluding `admin`, `config`, and `local`; retains current credentials |
+
+Restore requires the explicit `--confirm` argument:
+
+```sh
+bash scripts/db.sh restore mysql backups/mysql.sql --confirm
+bash scripts/db.sh restore postgres backups/postgres.dump --confirm
+bash scripts/db.sh restore mongodb backups/mongodb.archive.gz --confirm
+```
+
+Stop application writes and take a fresh backup before restoring. Only restore
+trusted files: SQL dumps can execute SQL. These are logical data backups, not
+complete snapshots of container configuration or database users. Objects absent
+from a backup are not necessarily removed on restore. MySQL and MongoDB restores
+are not atomic; a failure can leave partial changes. Do not resume applications
+until you have checked the restore outcome.
+
+MySQL's snapshot is consistent for transactional tables; avoid concurrent DDL,
+and stop writes for nontransactional tables. The standalone MongoDB deployment
+does not offer a cross-collection point-in-time dump: stop writes for consistency.
+Backups across these three services are not one coordinated transaction.
+Test restore compatibility before upgrading database major versions.
+Redis is intentionally untouched.
+
+## Repeatable demo seeds
+
+```sh
+bash scripts/db.sh seed all
+# Or one database:
+bash scripts/db.sh seed postgres
+```
+
+Reserved demo locations:
+
+- MySQL: `infrastructure_demo_customers` in `MYSQL_DATABASE`.
+- PostgreSQL: `infrastructure_demo.customers` in `POSTGRES_DB`.
+- MongoDB: `infrastructure_demo.customers` (database and collection).
+
+The versioned scripts in `seeds/` upsert two fictional customers with fixed IDs.
+Running them again refreshes those demo records without duplicating them; other
+records and application tables/collections are not deleted. Reserve these names
+and IDs for this tooling; do not use them for application data. Seeds are explicit,
+not first-start initialization scripts, so they also work with existing volumes.
+`seed all` stops at the first failure; it is not a cross-database transaction.
+
+### Verify the database workflows
+
+```sh
+bash tests/db-workflows.sh
+```
+
+This integration test starts a uniquely named Compose project with three temporary
+database volumes and no published ports. It checks repeated seeding, preservation
+of unrelated data, backup/restore round trips, private backup permissions, and
+failure safeguards. It removes only its own test containers and volumes on exit;
+the development stack is not touched. It requires Docker Compose with `--wait`
+support and available database images, and may pull images if they are missing.
+The test uses the same database tag variables/defaults as the development stack.
+
 ## Logs and monitoring scope
 
 Each service uses the `json-file` logging driver with `max-size: 10m` and
@@ -144,5 +226,5 @@ Each service uses the `json-file` logging driver with `max-size: 10m` and
 `docker compose logs --tail 100 SERVICE`.
 
 Prometheus still scrapes only itself. Database exporters, application metrics,
-dashboards, seeds, tracing, fault injection, messaging, and authentication
+dashboards, tracing, fault injection, messaging, and authentication
 services are intentionally outside this first pass.
